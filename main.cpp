@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
+#include <cctype> // Required for std::tolower
 
 // ==========================================
 // 1. Core Data Structure: The BK-Tree Node
@@ -152,6 +153,9 @@ public:
 // ==========================================
 // 5. The CSV Parser
 // ==========================================
+// ==========================================
+// 5. The TXT Parser (Updated for years-100k.txt)
+// ==========================================
 void loadDictionary(const std::string& filename, BKTree& tree) {
     std::ifstream file(filename);
     std::string line;
@@ -161,26 +165,36 @@ void loadDictionary(const std::string& filename, BKTree& tree) {
         return;
     }
 
-    // Skip the header line ("word,count")
-    std::getline(file, line);
-
     int countLoaded = 0;
+    
+    // Read the file line by line
     while (std::getline(file, line)) {
         std::stringstream ss(line);
         std::string wordStr;
-        std::string countStr;
+        std::string tempStr;
+        std::string lastCountStr;
 
-        // Split the line by comma
-        if (std::getline(ss, wordStr, ',') && std::getline(ss, countStr, ',')) {
-            // Safety check: The dataset has a couple of empty/null words
-            if (wordStr.empty() || countStr.empty()) continue;
+        // 1. Extract the first column (the word)
+        if (ss >> wordStr) {
+            
+            // 2. Convert the ALL CAPS word to lowercase
+            std::transform(wordStr.begin(), wordStr.end(), wordStr.begin(),
+                           [](unsigned char c){ return std::tolower(c); });
 
+            // 3. Keep reading the remaining columns until the end of the line
+            // The last thing stored in tempStr will be your most recent popularity score
+            while (ss >> tempStr) {
+                lastCountStr = tempStr;
+            }
+
+            // 4. Insert into the BK-Tree
             try {
-                long long frequency = std::stoll(countStr); // Convert string to long long
+                // We no longer need the 50,000 threshold because this file only has correct words!
+                long long frequency = std::stoll(lastCountStr); 
                 tree.insert(wordStr, frequency);
                 countLoaded++;
             } catch (const std::exception& e) {
-                // Ignore lines that have corrupted numbers
+                // Ignore lines with corrupted numbers
                 continue; 
             }
         }
@@ -202,6 +216,17 @@ bool rankSuggestions(const SearchResult& a, const SearchResult& b) {
     return a.frequency > b.frequency; 
 }
 
+// Helper function to check if a word is just a number
+bool isNumeric(const std::string& str) {
+    if (str.empty()) return false;
+    for (char c : str) {
+        if (!std::isdigit(c)) {
+            return false; // Found a letter or symbol, so it's not a pure number
+        }
+    }
+    return true;
+}
+
 // ==========================================
 // 7. Main Execution
 // ==========================================
@@ -209,45 +234,77 @@ int main() {
     BKTree spellCheckerTree;
     
     std::cout << "Loading dictionary... Please wait...\n";
-    
-    // NOTE: Based on your last terminal output, double check if your file is in "Desktop\DS2-Project" 
-    // or "Documents\GitHub\DS2 Project". Update this path to match exactly where the CSV is!
-    loadDictionary("C:\\Users\\HP\\Desktop\\DS2-Project\\unigram_freq.csv", spellCheckerTree);
+    // UPDATE THIS WITH YOUR ABSOLUTE PATH
+    loadDictionary("C:\\Users\\HP\\Desktop\\DS2-Project\\years-100k.txt", spellCheckerTree);
 
-    std::string userInput;
     int tolerance = 2; // Allow up to 2 typos
 
     std::cout << "\n--- Smart Autocorrect Engine Online ---\n";
-    std::cout << "Type a word to search (or 'exit' to quit): \n";
+    std::cout << "Type a full search query (or 'exit' to quit): \n";
 
+    std::string userLine;
+    
     while (true) {
         std::cout << "\nSearch> ";
-        std::cin >> userInput;
+        
+        // Use getline instead of cin so we can capture spaces and full sentences!
+        std::getline(std::cin >> std::ws, userLine); 
 
-        if (userInput == "exit") break;
+        if (userLine == "exit") break;
 
-        // 1. Fetch suggestions
-        std::vector<SearchResult> suggestions = spellCheckerTree.getSuggestions(userInput, tolerance);
+        std::stringstream ss(userLine);
+        std::string currentWord;
+        
+        std::vector<std::string> originalSentence;
+        std::vector<std::string> correctedSentence;
+        bool typoDetected = false;
 
-        // 2. Rank suggestions using our custom rule
-        std::sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+        // 1. Process the sentence word by word
+        while (ss >> currentWord) {
+            originalSentence.push_back(currentWord);
 
-        // 3. Display the results
-        if (suggestions.empty()) {
-            std::cout << "No matches found within " << tolerance << " typos.\n";
-        } else if (suggestions[0].distance == 0) {
-            std::cout << "[Exact Match Found]: " << userInput << " is spelled correctly!\n";
-        } else {
-            std::cout << "Did you mean: " << suggestions[0].word << "?\n";
-            std::cout << "\nOther potential matches:\n";
-            
-            // Print up to 5 alternative suggestions
-            int displayCount = std::min(5, (int)suggestions.size());
-            for (int i = 0; i < displayCount; i++) {
-                std::cout << i + 1 << ". " << suggestions[i].word 
-                          << " (Edits: " << suggestions[i].distance 
-                          << ", Popularity: " << suggestions[i].frequency << ")\n";
+            // --- THE NEW NUMBER BYPASS ---
+            // If the word is a number, accept it as correct and skip the search!
+            if (isNumeric(currentWord)) {
+                correctedSentence.push_back(currentWord);
+                continue; 
             }
+            // -----------------------------
+
+            // Convert word to lowercase for the BK-Tree search
+            std::string searchWord = currentWord;
+            std::transform(searchWord.begin(), searchWord.end(), searchWord.begin(),
+                           [](unsigned char c){ return std::tolower(c); });
+
+            // Fetch and rank suggestions
+            std::vector<SearchResult> suggestions = spellCheckerTree.getSuggestions(searchWord, tolerance);
+            std::sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+
+            // 2. Decide what to do with the word
+            if (suggestions.empty()) {
+                // No clue what this is, leave it alone
+                correctedSentence.push_back(currentWord); 
+            } else if (suggestions[0].distance == 0) {
+                // Exact match! It is spelled correctly.
+                correctedSentence.push_back(currentWord); 
+            } else {
+                // Typo found! Replace it with the #1 ranked suggestion
+                typoDetected = true;
+                correctedSentence.push_back(suggestions[0].word); 
+            }
+        }
+
+        // 3. Display the final result to the user
+        if (typoDetected) {
+            std::cout << "-> Did you mean: \"";
+            for (size_t i = 0; i < correctedSentence.size(); i++) {
+                std::cout << correctedSentence[i] << (i == correctedSentence.size() - 1 ? "" : " ");
+            }
+            std::cout << "\"?\n";
+            
+            // You can optionally print out the alternative choices for the specific typo here later!
+        } else {
+            std::cout << "-> Searching for: \"" << userLine << "\" (All words spelled correctly!)\n";
         }
     }
 
