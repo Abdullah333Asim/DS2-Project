@@ -5,61 +5,62 @@
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
-#include <cctype> // Required for std::tolower
+#include <cctype>
 
-// ==========================================
-// 1. Core Data Structure: The BK-Tree Node
-// ==========================================
+using namespace std;
+
+// BK-Tree Node
 struct BKNode {
-    std::string word;
+    string word;
     long long frequency;
-    
-    // The key is the edit distance.
-    // The value is the pointer to the child node.
-    std::unordered_map<int, BKNode*> children;
+    unordered_map<int, BKNode*> children;
 
-    // Constructor
-    BKNode(std::string w, long long freq) : word(w), frequency(freq) {}
+    BKNode(string w, long long freq) : word(w), frequency(freq) {}
 };
 
-// ==========================================
-// 2. The Result Container (MUST BE ABOVE BKTREE)
-// ==========================================
+// Stores the results for sorting later
 struct SearchResult {
-    std::string word;
+    string word;
     int distance;
     long long frequency;
 };
 
-// ==========================================
-// 3. The Math: Levenshtein Distance (Dynamic Programming)
-// ==========================================
-// ==========================================
-// 3. The Math: Levenshtein Distance (OPTIMIZED)
-// ==========================================
-int calculateLevenshteinDistance(const std::string& s1, const std::string& s2) {
+// Helper function to convert a string to lowercase
+void toLowerCase(string& str) {
+    for (int i = 0; i < str.length(); i++) {
+        str[i] = tolower(str[i]);
+    }
+}
+
+// Helper function to check if a word is just a number
+bool isNumeric(const string& str) {
+    if (str.empty()) return false;
+    for (int i = 0; i < str.length(); i++) {
+        if (!isdigit(str[i])) return false; 
+    }
+    return true;
+}
+
+// Optimized Levenshtein Distance using stack allocation
+int calculateLevenshteinDistance(const string& s1, const string& s2) {
     int m = s1.length();
     int n = s2.length();
     
-    // Safety check: Prevent overflow for ridiculously long accidental inputs
+    // Safety check to prevent array overflow
     if (m > 99 || n > 99) return 999; 
 
-    // FAST STACK ALLOCATION: No more slow std::vector memory requests!
     int dp[100][100]; 
 
     for (int i = 0; i <= m; i++) {
         for (int j = 0; j <= n; j++) {
             if (i == 0) {
                 dp[i][j] = j; 
-            }
-            else if (j == 0) {
+            } else if (j == 0) {
                 dp[i][j] = i; 
-            }
-            else if (s1[i - 1] == s2[j - 1]) {
+            } else if (s1[i - 1] == s2[j - 1]) {
                 dp[i][j] = dp[i - 1][j - 1];
-            }
-            else {
-                dp[i][j] = 1 + std::min({
+            } else {
+                dp[i][j] = 1 + min({
                     dp[i][j - 1],      // Insert
                     dp[i - 1][j],      // Remove
                     dp[i - 1][j - 1]   // Replace
@@ -70,9 +71,6 @@ int calculateLevenshteinDistance(const std::string& s1, const std::string& s2) {
     return dp[m][n];
 }
 
-// ==========================================
-// 4. The BK-Tree Class 
-// ==========================================
 class BKTree {
 private:
     BKNode* root;
@@ -80,9 +78,7 @@ private:
 public:
     BKTree() : root(nullptr) {}
 
-    // Insert logic
-    void insert(const std::string& word, long long frequency) {
-        // 1. If the tree is empty, the first word becomes the root
+    void insert(const string& word, long long frequency) {
         if (root == nullptr) {
             root = new BKNode(word, frequency);
             return;
@@ -90,47 +86,38 @@ public:
         
         BKNode* current = root;
         
-        // 2. Traverse the tree to find the right spot
         while (true) {
-            // Calculate the edit distance between the current node and the new word
             int distance = calculateLevenshteinDistance(current->word, word);
             
-            // If distance is 0, the word is exactly the same. We can ignore duplicates.
-            if (distance == 0) {
-                return; 
-            }
+            // Ignore duplicate words
+            if (distance == 0) return; 
             
-            // Check if the current node already has a child at this exact distance
+            // If no child exists at this distance, add the new node here
             if (current->children.find(distance) == current->children.end()) {
-                // NO CHILD EXISTS at this distance! 
-                // We found the correct spot. Create the new node here and stop.
                 current->children[distance] = new BKNode(word, frequency);
                 break;
             } else {
-                // A CHILD ALREADY EXISTS at this distance!
-                // Move down to that child and repeat the loop.
+                // Move down the tree
                 current = current->children[distance];
             }
         }
     }
 
-    // This is the recursive DFS function that heavily prunes the tree
-    void searchHelper(BKNode* node, const std::string& query, int tolerance, std::vector<SearchResult>& results) {
+    // Recursive DFS to find suggestions within the tolerance range
+    void searchHelper(BKNode* node, const string& query, int tolerance, vector<SearchResult>& results) {
         if (node == nullptr) return;
 
-        // How far is the current node from our misspelled word?
         int dist = calculateLevenshteinDistance(node->word, query);
 
-        // If it falls within our acceptable typo range, add it to our results!
         if (dist <= tolerance) {
             results.push_back({node->word, dist, node->frequency});
         }
 
-        // Triangle Inequality: Calculate our boundaries
+        // Triangle Inequality constraints
         int minBound = dist - tolerance;
         int maxBound = dist + tolerance;
 
-        // ONLY visit children whose edge weights fall within this mathematical boundary
+        // Prune the tree: only visit children within our mathematical bounds
         for (auto const& pair : node->children) {
             int edgeWeight = pair.first;
             BKNode* childNode = pair.second;
@@ -141,74 +128,51 @@ public:
         }
     }
 
-    // This is the public function we will call from our main loop
-    std::vector<SearchResult> getSuggestions(const std::string& query, int tolerance) {
-        std::vector<SearchResult> results;
+    vector<SearchResult> getSuggestions(const string& query, int tolerance) {
+        vector<SearchResult> results;
         searchHelper(root, query, tolerance, results);
         return results;
     }
 };
 
-
-// ==========================================
-// 5. The CSV Parser
-// ==========================================
-// ==========================================
-// 5. The TXT Parser (Updated for years-100k.txt)
-// ==========================================
-void loadDictionary(const std::string& filename, BKTree& tree) {
-    std::ifstream file(filename);
-    std::string line;
+void loadDictionary(const string& filename, BKTree& tree) {
+    ifstream file(filename);
+    string line;
 
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open the file " << filename << "\n";
+        cerr << "Error: Could not open " << filename << "\n";
         return;
     }
 
     int countLoaded = 0;
     
-    // Read the file line by line
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        std::string wordStr;
-        std::string tempStr;
-        std::string lastCountStr;
+    while (getline(file, line)) {
+        stringstream ss(line);
+        string wordStr, tempStr, lastCountStr;
 
-        // 1. Extract the first column (the word)
         if (ss >> wordStr) {
-            
-            // 2. Convert the ALL CAPS word to lowercase
-            std::transform(wordStr.begin(), wordStr.end(), wordStr.begin(),
-                           [](unsigned char c){ return std::tolower(c); });
+            // Replaced the complex transform() function with our simple helper
+            toLowerCase(wordStr);
 
-            // 3. Keep reading the remaining columns until the end of the line
-            // The last thing stored in tempStr will be your most recent popularity score
+            // Grab the last column for the frequency score
             while (ss >> tempStr) {
                 lastCountStr = tempStr;
             }
 
-            // 4. Insert into the BK-Tree
             try {
-                // We no longer need the 50,000 threshold because this file only has correct words!
-                long long frequency = std::stoll(lastCountStr); 
+                long long frequency = stoll(lastCountStr); 
                 tree.insert(wordStr, frequency);
                 countLoaded++;
-            } catch (const std::exception& e) {
-                // Ignore lines with corrupted numbers
+            } catch (...) {
                 continue; 
             }
         }
     }
-
     file.close();
-    std::cout << "Successfully loaded " << countLoaded << " words into the dictionary.\n";
+    cout << "Loaded " << countLoaded << " words into the dictionary.\n";
 }
 
-// ==========================================
-// 6. Sorting / Ranking Rule
-// ==========================================
-// 1. Smallest edit distance first (closest match)
-// 2. If distance is tied, Highest frequency first (most popular word)
+// Custom sort: Primary sort by edit distance, secondary by popularity
 bool rankSuggestions(const SearchResult& a, const SearchResult& b) {
     if (a.distance != b.distance) {
         return a.distance < b.distance; 
@@ -216,95 +180,155 @@ bool rankSuggestions(const SearchResult& a, const SearchResult& b) {
     return a.frequency > b.frequency; 
 }
 
-// Helper function to check if a word is just a number
-bool isNumeric(const std::string& str) {
-    if (str.empty()) return false;
-    for (char c : str) {
-        if (!std::isdigit(c)) {
-            return false; // Found a letter or symbol, so it's not a pure number
-        }
-    }
-    return true;
-}
-
 // ==========================================
-// 7. Main Execution
+// FEATURE 1: Sentence Autocorrect with UI Prompt
 // ==========================================
-int main() {
-    BKTree spellCheckerTree;
-    
-    std::cout << "Loading dictionary... Please wait...\n";
-    // UPDATE THIS WITH YOUR ABSOLUTE PATH
-    loadDictionary("C:\\Users\\HP\\Desktop\\DS2-Project\\years-100k.txt", spellCheckerTree);
+void runApplication1(BKTree& tree, int tolerance) {
+    cout << "\n--- Application 1: Smart Sentence Autocorrect ---\n";
+    cout << "Type a full search query (or 'exit' to go back): \n";
 
-    int tolerance = 2; // Allow up to 2 typos
-
-    std::cout << "\n--- Smart Autocorrect Engine Online ---\n";
-    std::cout << "Type a full search query (or 'exit' to quit): \n";
-
-    std::string userLine;
-    
+    string userLine;
     while (true) {
-        std::cout << "\nSearch> ";
-        
-        // Use getline instead of cin so we can capture spaces and full sentences!
-        std::getline(std::cin >> std::ws, userLine); 
+        cout << "\nSearch> ";
+        getline(cin >> ws, userLine); 
 
         if (userLine == "exit") break;
 
-        std::stringstream ss(userLine);
-        std::string currentWord;
+        stringstream ss(userLine);
+        string currentWord;
         
-        std::vector<std::string> originalSentence;
-        std::vector<std::string> correctedSentence;
+        string originalSentence[100];
+        string correctedSentence[100];
+        int wordCount = 0;
         bool typoDetected = false;
 
-        // 1. Process the sentence word by word
-        while (ss >> currentWord) {
-            originalSentence.push_back(currentWord);
+        while (ss >> currentWord && wordCount < 100) {
+            originalSentence[wordCount] = currentWord;
 
-            // --- THE NEW NUMBER BYPASS ---
-            // If the word is a number, accept it as correct and skip the search!
             if (isNumeric(currentWord)) {
-                correctedSentence.push_back(currentWord);
+                correctedSentence[wordCount] = currentWord;
+                wordCount++;
                 continue; 
             }
-            // -----------------------------
 
-            // Convert word to lowercase for the BK-Tree search
-            std::string searchWord = currentWord;
-            std::transform(searchWord.begin(), searchWord.end(), searchWord.begin(),
-                           [](unsigned char c){ return std::tolower(c); });
+            string searchWord = currentWord;
+            // Replaced transform() with simple helper
+            toLowerCase(searchWord);
 
-            // Fetch and rank suggestions
-            std::vector<SearchResult> suggestions = spellCheckerTree.getSuggestions(searchWord, tolerance);
-            std::sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+            vector<SearchResult> suggestions = tree.getSuggestions(searchWord, tolerance);
+            sort(suggestions.begin(), suggestions.end(), rankSuggestions);
 
-            // 2. Decide what to do with the word
-            if (suggestions.empty()) {
-                // No clue what this is, leave it alone
-                correctedSentence.push_back(currentWord); 
-            } else if (suggestions[0].distance == 0) {
-                // Exact match! It is spelled correctly.
-                correctedSentence.push_back(currentWord); 
+            if (suggestions.empty() || suggestions[0].distance == 0) {
+                correctedSentence[wordCount] = currentWord; 
             } else {
-                // Typo found! Replace it with the #1 ranked suggestion
                 typoDetected = true;
-                correctedSentence.push_back(suggestions[0].word); 
+                correctedSentence[wordCount] = suggestions[0].word; 
             }
+            wordCount++;
         }
 
-        // 3. Display the final result to the user
         if (typoDetected) {
-            std::cout << "-> Did you mean: \"";
-            for (size_t i = 0; i < correctedSentence.size(); i++) {
-                std::cout << correctedSentence[i] << (i == correctedSentence.size() - 1 ? "" : " ");
+            cout << "\n-> Did you mean: \"";
+            for (int i = 0; i < wordCount; i++) {
+                cout << correctedSentence[i] << (i == wordCount - 1 ? "" : " ");
             }
-            std::cout << "\"?\n";
+            cout << "\"?\n";
             
-            // You can optionally print out the alternative choices for the specific typo here later!
+            cout << "\nPress 'y' to search with the corrected query, or 'n' to use your exact input: ";
+            string choice;
+            getline(cin, choice);
+
+            if (choice == "y" || choice == "Y") {
+                cout << "[Executing Search]: \"";
+                for (int i = 0; i < wordCount; i++) {
+                    cout << correctedSentence[i] << (i == wordCount - 1 ? "" : " ");
+                }
+                cout << "\"\n";
+            } else {
+                cout << "[Executing Search]: \"" << userLine << "\"\n";
+            }
         } else {
-            std::cout << "-> Searching for: \"" << userLine << "\" (All words spelled correctly!)\n";
+            cout << "\n[Executing Search]: \"" << userLine << "\" (All words spelled correctly!)\n";
+        }
+    }
+}
+
+// ==========================================
+// FEATURE 3: Single Word Ranking Display
+// ==========================================
+void runApplication3(BKTree& tree, int tolerance) {
+    cout << "\n--- Application 3: Ranked Suggestions ---\n";
+    cout << "Type a misspelled word to see rankings (or 'exit' to go back): \n";
+
+    string userWord;
+    while (true) {
+        cout << "\nWord> ";
+        cin >> userWord;
+
+        if (userWord == "exit") {
+            cin.ignore(); 
+            break;
+        }
+
+        if (isNumeric(userWord)) {
+            cout << "Skipping number.\n";
+            continue;
+        }
+
+        string searchWord = userWord;
+        // Replaced transform() with simple helper
+        toLowerCase(searchWord);
+
+        vector<SearchResult> suggestions = tree.getSuggestions(searchWord, tolerance);
+        sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+
+        if (suggestions.empty()) {
+            cout << "No matches found.\n";
+        } else if (suggestions[0].distance == 0) {
+            cout << "[Exact Match]: '" << userWord << "' is spelled correctly!\n";
+        } else {
+            cout << "\n[Typo Detected]: '" << userWord << "' -> Top Suggestion: '" << suggestions[0].word << "'\n";
+            cout << "Other ranked suggestions:\n";
+            
+            int displayCount = min(5, (int)suggestions.size());
+            for (int i = 1; i < displayCount; i++) { 
+                cout << "  " << i << ". " << suggestions[i].word 
+                     << " (Edits: " << suggestions[i].distance 
+                     << ", Popularity: " << suggestions[i].frequency << ")\n";
+            }
+        }
+    }
+}
+
+int main() {
+    BKTree spellCheckerTree;
+    
+    cout << "Loading dictionary... Please wait...\n";
+    loadDictionary("years-100k.txt", spellCheckerTree);
+
+    int tolerance = 2; 
+
+    while (true) {
+        cout << "\n=====================================\n";
+        cout << "        DS2 Project Main Menu        \n";
+        cout << "=====================================\n";
+        cout << "1. Run Application 1 (Sentence Autocorrect Engine)\n";
+        cout << "3. Run Application 3 (Ranked Word Suggestions)\n";
+        cout << "0. Exit\n";
+        cout << "Choose an option: ";
+        
+        string choice;
+        cin >> choice;
+
+        if (choice == "1") {
+            runApplication1(spellCheckerTree, tolerance);
+        } else if (choice == "3") {
+            runApplication3(spellCheckerTree, tolerance);
+        } else if (choice == "0") {
+            cout << "Exiting program...\n";
+            break;
+        } else {
+            cout << "Invalid choice. Please try again.\n";
         }
     }
 
