@@ -23,6 +23,7 @@ struct SearchResult{
     string word;
     int distance;
     long long frequency;
+    long long contextScore;
 };
 
 // Helper function to convert a string to lowercase
@@ -88,7 +89,10 @@ class BKTree {
             while (true) {
                 int distance = calculateLevenshteinDistance(current->word, word);
                 // Ignore duplicate words
-                if (distance == 0) return; 
+                if (distance == 0){
+                    current->isDeleted = false; // If it was previously deleted, we can "undelete" it by resetting the flag
+                    return;
+                } 
                 
                 // If no child exists at this distance, add the new node here
                 if (current->children.find(distance) == current->children.end()){
@@ -214,15 +218,62 @@ void loadDictionary(const string& filename, BKTree& tree){
     cout << "Loaded " << countLoaded << " words into the dictionary.\n";
 }
 
+// ==========================================
+// FEATURE 4: The Context/Bigram Parser
+// ==========================================
+void loadBigrams(const string& filename, unordered_map<string, unordered_map<string, long long>>& bigramMap) {
+    ifstream file(filename);
+    string line;
+
+    if (!file.is_open()) {
+        cerr << "Error: Could not open " << filename << "\n";
+        return;
+    }
+
+    int countLoaded = 0;
+    
+    while (getline(file, line)) {
+        string w1 = "", w2 = "", countStr = "";
+        int wordState = 0; // 0 = writing w1, 1 = writing w2, 2 = writing the number
+
+        for (int i = 0; i < line.length(); i++) {
+            char c = line[i];
+            
+            // The file separates the words with a space, and the number with a tab '\t'
+            if (c == ' ' || c == '\t') {
+                // If we hit a space/tab, move to the next state (but ignore consecutive spaces)
+                if (wordState == 0 && w1.length() > 0) wordState = 1;
+                else if (wordState == 1 && w2.length() > 0) wordState = 2;
+            } else {
+                if (wordState == 0) w1 += c;
+                else if (wordState == 1) w2 += c;
+                else countStr += c;
+            }
+        }
+
+        toLowerCase(w1);
+        toLowerCase(w2);
+        long long frequency = stringToNumber(countStr);
+        
+        if (frequency > 0 && w1.length() > 0 && w2.length() > 0) {
+            bigramMap[w1][w2] = frequency;
+            countLoaded++;
+        }
+    }
+    
+    file.close();
+    cout << "Loaded " << countLoaded << " word pairings into the Context Map.\n";
+}
+
 // Custom sort: Primary sort by edit distance, secondary by popularity
 bool rankSuggestions(const SearchResult& a, const SearchResult& b) {
     if (a.distance != b.distance) {
         return a.distance < b.distance; 
     }
-    return a.frequency > b.frequency; 
+    return a.contextScore > b.contextScore;; 
 }
 
-void runApplication1(BKTree& tree, int tolerance) {
+void runApplication1(BKTree& tree,unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
     cout << "\nApplication 1: Smart Sentence Autocorrect\n";
     cout << "Type a full search query (or 'exit' to go back): \n";
 
@@ -261,7 +312,34 @@ void runApplication1(BKTree& tree, int tolerance) {
                     toLowerCase(searchWord);
 
                     vector<SearchResult> suggestions = tree.getSuggestions(searchWord, tolerance);
+                    // applying Context Probability Scoring
+                    // If we are not on the first word, grab the previous word!
+                    string previousWord = "";
+                    if (wordCount > 0) {
+                        previousWord = correctedSentence[wordCount - 1];
+                        toLowerCase(previousWord); 
+                    }
+
+                    // Calculate the smart score for every suggestion
+                    for (int s = 0; s < suggestions.size(); s++) {
+                        long long standalonePop = suggestions[s].frequency;
+                        long long pairPop = 0;
+
+                        // If we have a previous word, check the Bigram map!
+                        if (previousWord != "") {
+                            pairPop = bigramMap[previousWord][suggestions[s].word];
+                        }
+
+                        // THE PROBABILITY MATH:
+                        // We give the standalone word its base score, but we heavily weight the bigram context.
+                        // If pairPop is 0, it relies entirely on its standalone popularity.
+                        long long contextBonus = pairPop * 50000000LL; 
+                        suggestions[s].contextScore = standalonePop + contextBonus;
+                    }
+
+                    // Now sort using our custom rule!
                     sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+                    // ==========================================
 
                     if (suggestions.empty() || suggestions[0].distance == 0) {
                         correctedSentence[wordCount] = currentWord; 
@@ -302,6 +380,61 @@ void runApplication1(BKTree& tree, int tolerance) {
             }
         } else {
             cout << "\n[Executing Search]: \"" << userLine << "\" (All words spelled correctly!)\n";
+        }
+    }
+}
+
+// ==========================================
+// FEATURE 2: Add Custom Word to Dictionary
+// ==========================================
+void runApplication2(BKTree& tree) {
+    cout << "\n--- Application 2: Personal Dictionary Manager ---\n";
+    cout << "Type a new word to add (or 'exit' to go back): \n";
+
+    string userWord;
+    while (true) {
+        cout << "\nAdd Word> ";
+        cin >> userWord;
+
+        if (userWord == "exit") {
+            cin.ignore(); // Clear buffer before returning to main menu
+            break;
+        }
+
+        if (isNumeric(userWord)) {
+            cout << "[Error] Cannot add numbers to the dictionary.\n";
+            continue;
+        }
+
+        toLowerCase(userWord);
+
+        // Check if it already exists using a tolerance of 0
+        vector<SearchResult> exactMatch = tree.getSuggestions(userWord, 0);
+
+        if (!exactMatch.empty()) {
+            cout << "[Notice] The word '" << userWord << "' is already in the dictionary!\n";
+        } else {
+            cout << "The word '" << userWord << "' was not found. Add it to your personal dictionary? (y/n): ";
+            string choice;
+            cin >> choice;
+
+            if (choice == "y" || choice == "Y") {
+                // 1. Add to the BK-Tree in memory 
+                // We give it a massive base frequency so user-added words are always prioritized as top suggestions!
+                tree.insert(userWord, 50000000); 
+
+                // 2. Save it to a personal text file so it persists after the program closes
+                ofstream outFile("personal_dict.txt", ios::app);
+                if (outFile.is_open()) {
+                    // Format: word frequency (matching our parser design)
+                    outFile << userWord << " " << 50000000 << "\n";
+                    outFile.close();
+                }
+
+                cout << "[Success] '" << userWord << "' has been added to your system!\n";
+            } else {
+                cout << "[Cancelled] Word not added.\n";
+            }
         }
     }
 }
@@ -353,15 +486,29 @@ int main() {
     cout << "Loading dictionary, Please wait...\n";
     loadDictionary("years-100k.txt", spellCheckerTree);
 
+    // ===============================================
+    // NEW: Silently attempt to load personal dictionary
+    // ===============================================
+    ifstream checkFile("personal_dict.txt");
+    if (checkFile.is_open()) {
+        checkFile.close();
+        loadDictionary("personal_dict.txt", spellCheckerTree);
+    }
+    // ===============================================
+
+    unordered_map<string, unordered_map<string, long long>> bigramMap;
+    cout << "Loading Context Map... This might take a moment...\n";
+    loadBigrams("count_2w.txt", bigramMap);
+
     int tolerance = 2; 
 
     while (true) {
-        cout << "\n=====================================\n";
-        cout << "        DS2 Project Main Menu        \n";
-        cout << "=====================================\n";
+        cout << "\nTemporary Main Menu Until we create a proper GUI\n";
+        cout << "=========================================\n";
         cout << "1. Run Application 1 (Sentence Autocorrect Engine)\n";
+        cout << "2. Run Application 2 (Personal Dictionary Manager)\n";
         cout << "3. Run Application 3 (Ranked Word Suggestions)\n";
-        cout << "4. Delete a Word (Instructor Demo)\n"; // NEW OPTION
+        cout << "4. Delete a Word (Instructor Demo)\n";
         cout << "0. Exit\n";
         cout << "Choose an option: ";
         
@@ -369,15 +516,16 @@ int main() {
         cin >> choice;
 
         if (choice == "1") {
-            runApplication1(spellCheckerTree, tolerance);
+            runApplication1(spellCheckerTree, bigramMap, tolerance);
+        } else if (choice == "2") {
+            runApplication2(spellCheckerTree); // NEW OPTION CALL
         } else if (choice == "3") {
             runApplication3(spellCheckerTree, tolerance);
         } else if (choice == "4") {
-            // NEW LOGIC TO DEMONSTRATE DELETION
             cout << "\nEnter word to delete: ";
             string delWord;
             cin >> delWord;
-            toLowerCase(delWord); // Make sure it's lowercase!
+            toLowerCase(delWord); 
             
             if (spellCheckerTree.deleteWord(delWord)) {
                 cout << "[Success] '" << delWord << "' has been deleted from the dictionary.\n";
