@@ -12,9 +12,10 @@ using namespace std;
 struct BKNode{
     string word;
     long long frequency;
+    bool isDeleted;
     unordered_map<int, BKNode*> children;
 
-    BKNode(string w, long long freq): word(w), frequency(freq){}
+    BKNode(string w, long long freq): word(w), frequency(freq), isDeleted(false){}
 };
 
 // Stores the results for sorting later
@@ -100,13 +101,38 @@ class BKTree {
             }
         }
 
+        bool deleteWord(const string& word){
+            if (root == nullptr) return false;
+            BKNode* current = root;
+            
+            while (true) {
+                int distance = calculateLevenshteinDistance(current->word, word);
+                
+                // we found the exact word
+                if (distance == 0) {
+                    if (current->isDeleted) {
+                        return false; // it was already deleted previously
+                    }
+                    current->isDeleted = true; // set the deletion flag
+                    return true;
+                }
+                
+                // If it's not the current node, check if a child exists at this distance
+                if (current->children.find(distance) != current->children.end()) {
+                    current = current->children[distance]; // Move down the tree
+                } else {
+                    return false; // word doesnt exist in the tree
+                }
+            }
+        }
+
         // Recursive function to find suggestions within the tolerance range
         void searchHelper(BKNode* node, const string& query, int tolerance, vector<SearchResult>& results) {
             if (node == nullptr) return;
 
             int dist = calculateLevenshteinDistance(node->word, query);
 
-            if (dist <= tolerance){
+            if (dist <= tolerance && !node->isDeleted){
                 results.push_back({node->word, dist, node->frequency});
             }
 
@@ -330,11 +356,13 @@ int main() {
     int tolerance = 2; 
 
     while (true) {
-        cout << "\nTemporary Main Menu Until we create a proper GUI\n";
-        cout << "=========================================\n";
+        cout << "\n=====================================\n";
+        cout << "        DS2 Project Main Menu        \n";
+        cout << "=====================================\n";
         cout << "1. Run Application 1 (Sentence Autocorrect Engine)\n";
-        cout << "2. Run Application 3 (Ranked Word Suggestions)\n";
-        cout << "3. Exit\n";
+        cout << "3. Run Application 3 (Ranked Word Suggestions)\n";
+        cout << "4. Delete a Word (Instructor Demo)\n"; // NEW OPTION
+        cout << "0. Exit\n";
         cout << "Choose an option: ";
         
         string choice;
@@ -342,9 +370,21 @@ int main() {
 
         if (choice == "1") {
             runApplication1(spellCheckerTree, tolerance);
-        } else if (choice == "2") {
-            runApplication3(spellCheckerTree, tolerance);
         } else if (choice == "3") {
+            runApplication3(spellCheckerTree, tolerance);
+        } else if (choice == "4") {
+            // NEW LOGIC TO DEMONSTRATE DELETION
+            cout << "\nEnter word to delete: ";
+            string delWord;
+            cin >> delWord;
+            toLowerCase(delWord); // Make sure it's lowercase!
+            
+            if (spellCheckerTree.deleteWord(delWord)) {
+                cout << "[Success] '" << delWord << "' has been deleted from the dictionary.\n";
+            } else {
+                cout << "[Error] '" << delWord << "' was not found or is already deleted.\n";
+            }
+        } else if (choice == "0") {
             cout << "Exiting program...\n";
             break;
         } else {
