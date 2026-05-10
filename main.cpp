@@ -581,21 +581,109 @@ void runApplication2_Headless(string userWord, BKTree& tree) {
 }
 
 // ==========================================
-// API FUNCTION FOR PYTHON GUI (Application 3)
+// API FUNCTION FOR PYTHON GUI (Application 3 - Context-Aware Dropdown)
 // ==========================================
-void runApplication3_Headless(string userWord, BKTree& tree, int tolerance) {
-    toLowerCase(userWord);
-    vector<SearchResult> suggestions = tree.getSuggestions(userWord, tolerance);
+void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
+    string currentWord = "";
+    string previousWord = "";
+    
+    // Split the query into individual words
+    vector<string> words;
+    string temp = "";
+    for (char c : query) {
+        if (c == ' ' || c == '\t') {
+            if (!temp.empty()) { words.push_back(temp); temp = ""; }
+        } else {
+            temp += c;
+        }
+    }
+    if (!temp.empty()) words.push_back(temp);
+
+    if (words.empty()) return;
+    
+    // The word they are currently typing is the last word in the array
+    currentWord = words.back();
+    toLowerCase(currentWord);
+
+    // If there is a word before it, grab it for the Bigram Context!
+    if (words.size() > 1) {
+        previousWord = words[words.size() - 2];
+        toLowerCase(previousWord);
+    }
+
+    vector<SearchResult> suggestions = tree.getSuggestions(currentWord, tolerance);
+    
+    // ==========================================
+    // THE MAGIC: Apply Context Score to Live Suggestions!
+    // ==========================================
+    for (int s = 0; s < suggestions.size(); s++) {
+        long long standalonePop = suggestions[s].frequency;
+        long long pairPop = 0;
+        
+        if (previousWord != "") {
+            pairPop = bigramMap[previousWord][suggestions[s].word];
+        }
+        
+        // Boost the suggestion if it forms a valid Bigram!
+        suggestions[s].contextScore = standalonePop + (pairPop * 50000000LL); 
+    }
+
+    // Sort using your custom probability rule
     sort(suggestions.begin(), suggestions.end(), rankSuggestions);
 
     if (suggestions.empty() || suggestions[0].distance == 0) {
         cout << "CORRECT";
     } else {
-        // Output a comma-separated list of the top 5 suggestions
+        // Output a comma-separated list of the top 5 smartest suggestions
         int displayCount = min(5, (int)suggestions.size());
         for (int i = 0; i < displayCount; i++) {
             cout << suggestions[i].word << (i == displayCount - 1 ? "" : ",");
         }
+    }
+}
+
+// ==========================================
+// API FUNCTION FOR PYTHON GUI (Application 4 - Context Map Math)
+// ==========================================
+void runApplication4_Headless(string query, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
+    // We expect exactly two words from Python: "previous_word typo_word"
+    int spaceIndex = query.find(' ');
+    if (spaceIndex == string::npos) {
+        cout << "ERROR";
+        return;
+    }
+
+    string prevWord = query.substr(0, spaceIndex);
+    string typoWord = query.substr(spaceIndex + 1);
+
+    toLowerCase(prevWord);
+    toLowerCase(typoWord);
+
+    vector<SearchResult> suggestions = tree.getSuggestions(typoWord, tolerance);
+    if (suggestions.empty() || suggestions[0].distance == 0) {
+        cout << "NO_TYPO";
+        return;
+    }
+
+    // Apply the Application 4 Context Math!
+    for (int s = 0; s < suggestions.size(); s++) {
+        long long standalonePop = suggestions[s].frequency;
+        long long pairPop = bigramMap[prevWord][suggestions[s].word];
+        suggestions[s].contextScore = standalonePop + (pairPop * 50000000LL); 
+    }
+
+    // Sort using your custom rankSuggestions logic
+    sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+
+    // Output top 3 results formatted for Python: word,base,bigram,final|word,base,bigram,final
+    int displayCount = min(3, (int)suggestions.size());
+    for (int i = 0; i < displayCount; i++) {
+        long long pairPop = bigramMap[prevWord][suggestions[i].word];
+        cout << suggestions[i].word << "," 
+             << suggestions[i].frequency << "," 
+             << pairPop << "," 
+             << suggestions[i].contextScore;
+        if (i < displayCount - 1) cout << "|";
     }
 }
 
@@ -635,7 +723,9 @@ int main(int argc, char* argv[]){
         } else if (mode == "2") {
             runApplication2_Headless(query, spellCheckerTree); // NEW!
         } else if (mode == "3") {
-            runApplication3_Headless(query, spellCheckerTree, tolerance);
+            runApplication3_Headless(query, spellCheckerTree, bigramMap, tolerance);
+        } else if (mode == "4") {
+            runApplication4_Headless(query, spellCheckerTree, bigramMap, tolerance);
         }
         return 0; 
     }
