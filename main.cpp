@@ -215,7 +215,6 @@ void loadDictionary(const string& filename, BKTree& tree){
     }
     
     file.close();
-    cout << "Loaded " << countLoaded << " words into the dictionary.\n";
 }
 
 // ==========================================
@@ -262,7 +261,6 @@ void loadBigrams(const string& filename, unordered_map<string, unordered_map<str
     }
     
     file.close();
-    cout << "Loaded " << countLoaded << " word pairings into the Context Map.\n";
 }
 
 // Custom sort: Primary sort by edit distance, secondary by popularity
@@ -480,10 +478,130 @@ void runApplication3(BKTree& tree, int tolerance) {
     }
 }
 
-int main() {
+// ==========================================
+// API FUNCTION FOR PYTHON GUI (Application 1)
+// ==========================================
+void runApplication1_Headless(string userLine, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
+    string originalSentence[100];
+    string correctedSentence[100];
+    int wordCount = 0;
+    bool typoDetected = false;
+    string currentWord = "";
+
+    for (int i = 0; i <= userLine.length() && wordCount < 100; i++) {
+        if (i == userLine.length() || userLine[i] == ' ' || userLine[i] == '\t') {
+            if (currentWord.length() > 0) {
+                originalSentence[wordCount] = currentWord;
+                
+                if (isNumeric(currentWord)) {
+                    correctedSentence[wordCount] = currentWord;
+                    wordCount++;
+                    currentWord = ""; 
+                    continue; 
+                }
+
+                string searchWord = currentWord;
+                toLowerCase(searchWord);
+                vector<SearchResult> suggestions = tree.getSuggestions(searchWord, tolerance);
+
+                // FEATURE 4: Context Multiplier
+                string previousWord = "";
+                if (wordCount > 0) {
+                    previousWord = correctedSentence[wordCount - 1];
+                    toLowerCase(previousWord); 
+                }
+
+                for (int s = 0; s < suggestions.size(); s++) {
+                    long long standalonePop = suggestions[s].frequency;
+                    long long pairPop = 0;
+                    if (previousWord != "") {
+                        pairPop = bigramMap[previousWord][suggestions[s].word];
+                    }
+                    suggestions[s].contextScore = standalonePop + (pairPop * 50000000LL); 
+                }
+
+                sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+
+                if (suggestions.empty() || suggestions[0].distance == 0) {
+                    correctedSentence[wordCount] = currentWord; 
+                } else {
+                    typoDetected = true;
+                    correctedSentence[wordCount] = suggestions[0].word; 
+                }
+                wordCount++;
+                currentWord = ""; 
+            }
+        } else {
+            currentWord += userLine[i];
+        }
+    }
+
+    // Print ONLY the result so Python can read it easily
+    if (typoDetected) {
+        cout << "Did you mean: \"";
+        for (int i = 0; i < wordCount; i++) {
+            cout << correctedSentence[i] << (i == wordCount - 1 ? "" : " ");
+        }
+        cout << "\"?";
+    } else {
+        cout << "All words spelled correctly!";
+    }
+}
+
+// ==========================================
+// API FUNCTION FOR PYTHON GUI (Application 2)
+// ==========================================
+void runApplication2_Headless(string userWord, BKTree& tree) {
+    if (isNumeric(userWord)) {
+        cout << "ERROR_NUMERIC";
+        return;
+    }
+    
+    toLowerCase(userWord);
+    
+    // Check if it exists with 0 tolerance (exact match)
+    vector<SearchResult> exactMatch = tree.getSuggestions(userWord, 0);
+    
+    if (!exactMatch.empty()) {
+        cout << "EXISTS";
+    } else {
+        // Insert into tree with massive priority
+        tree.insert(userWord, 50000000); 
+        
+        // Save to file
+        ofstream outFile("personal_dict.txt", ios::app);
+        if (outFile.is_open()) {
+            outFile << userWord << " " << 50000000 << "\n";
+            outFile.close();
+            cout << "ADDED";
+        } else {
+            cout << "ERROR_FILE";
+        }
+    }
+}
+
+// ==========================================
+// API FUNCTION FOR PYTHON GUI (Application 3)
+// ==========================================
+void runApplication3_Headless(string userWord, BKTree& tree, int tolerance) {
+    toLowerCase(userWord);
+    vector<SearchResult> suggestions = tree.getSuggestions(userWord, tolerance);
+    sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+
+    if (suggestions.empty() || suggestions[0].distance == 0) {
+        cout << "CORRECT";
+    } else {
+        // Output a comma-separated list of the top 5 suggestions
+        int displayCount = min(5, (int)suggestions.size());
+        for (int i = 0; i < displayCount; i++) {
+            cout << suggestions[i].word << (i == displayCount - 1 ? "" : ",");
+        }
+    }
+}
+
+int main(int argc, char* argv[]){
     BKTree spellCheckerTree;
     
-    cout << "Loading dictionary, Please wait...\n";
     loadDictionary("years-100k.txt", spellCheckerTree);
 
     // ===============================================
@@ -497,10 +615,31 @@ int main() {
     // ===============================================
 
     unordered_map<string, unordered_map<string, long long>> bigramMap;
-    cout << "Loading Context Map... This might take a moment...\n";
     loadBigrams("count_2w.txt", bigramMap);
 
-    int tolerance = 2; 
+    int tolerance = 2;
+    // ===============================================
+    // NEW: Python API Mode Listener
+    // ===============================================
+    if (argc > 1) {
+        string mode = argv[1]; 
+        string query = "";
+        
+        for (int i = 2; i < argc; i++) {
+            query += argv[i];
+            if (i < argc - 1) query += " ";
+        }
+
+        if (mode == "1") {
+            runApplication1_Headless(query, spellCheckerTree, bigramMap, tolerance);
+        } else if (mode == "2") {
+            runApplication2_Headless(query, spellCheckerTree); // NEW!
+        } else if (mode == "3") {
+            runApplication3_Headless(query, spellCheckerTree, tolerance);
+        }
+        return 0; 
+    }
+    // =============================================== 
 
     while (true) {
         cout << "\nTemporary Main Menu Until we create a proper GUI\n";
