@@ -348,13 +348,12 @@ void runApplication2_Headless(string userWord, BKTree& tree) {
 }
 
 // ==========================================
-// API FUNCTION FOR PYTHON GUI (Application 3 - Stratified Dropdown)
+// API FUNCTION FOR PYTHON GUI (Application 3)
 // ==========================================
 void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
     string currentWord = "";
     string previousWord = "";
     
-    // Split the query
     vector<string> words;
     string temp = "";
     for (char c : query) {
@@ -378,18 +377,7 @@ void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, 
 
     vector<SearchResult> suggestions = tree.getSuggestions(currentWord, tolerance);
     
-    bool isCorrect = false;
-    vector<SearchResult> bucketDist1;
-    vector<SearchResult> bucketDist2;
-
-    // Process all suggestions and bucket them
     for (int s = 0; s < suggestions.size(); s++) {
-        // If distance is 0, they spelled it right, no need to suggest anything!
-        if (suggestions[s].distance == 0) {
-            isCorrect = true;
-            break;
-        }
-        
         long long standalonePop = suggestions[s].frequency;
         long long pairPop = 0;
         
@@ -398,47 +386,16 @@ void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, 
         }
         
         suggestions[s].contextScore = standalonePop + (pairPop * 50000000LL); 
-
-        // BUCKET THE WORDS
-        if (suggestions[s].distance == 1) {
-            bucketDist1.push_back(suggestions[s]);
-        } else if (suggestions[s].distance == 2) {
-            bucketDist2.push_back(suggestions[s]);
-        }
     }
 
-    if (isCorrect) {
+    sort(suggestions.begin(), suggestions.end(), rankSuggestions);
+
+    if (suggestions.empty() || suggestions[0].distance == 0) {
         cout << "CORRECT";
-        return;
-    }
-
-    // Sort both buckets independently using purely their Context Score!
-    sort(bucketDist1.begin(), bucketDist1.end(), [](const SearchResult& a, const SearchResult& b){
-        return a.contextScore > b.contextScore;
-    });
-    sort(bucketDist2.begin(), bucketDist2.end(), [](const SearchResult& a, const SearchResult& b){
-        return a.contextScore > b.contextScore;
-    });
-
-    vector<SearchResult> finalSuggestions;
-    
-    // 1. Grab up to 3 words from Bucket 1
-    int d1_count = min(3, (int)bucketDist1.size());
-    for(int i = 0; i < d1_count; i++) {
-        finalSuggestions.push_back(bucketDist1[i]);
-    }
-
-    // 2. Grab the remaining slots (up to 5 total rows) from Bucket 2
-    int slots_left = 5 - finalSuggestions.size();
-    int d2_count = min(slots_left, (int)bucketDist2.size());
-    for(int i = 0; i < d2_count; i++) {
-        finalSuggestions.push_back(bucketDist2[i]);
-    }
-
-    // Output the final mixed list!
-    if (!finalSuggestions.empty()) {
-        for (int i = 0; i < finalSuggestions.size(); i++) {
-            cout << finalSuggestions[i].word << (i == finalSuggestions.size() - 1 ? "" : ",");
+    } else {
+        int displayCount = min(5, (int)suggestions.size());
+        for (int i = 0; i < displayCount; i++) {
+            cout << suggestions[i].word << (i == displayCount - 1 ? "" : ",");
         }
     }
 }
