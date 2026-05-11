@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -6,6 +5,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 
 using namespace std;
 
@@ -89,9 +89,9 @@ class BKTree {
             
             while (true) {
                 int distance = calculateLevenshteinDistance(current->word, word);
-                // Ignore duplicate words
+                // Ignore duplicate words or "undelete" if it was previously marked as deleted
                 if (distance == 0){
-                    current->isDeleted = false; // "undelete" it by resetting the flag
+                    current->isDeleted = false;
                     return;
                 } 
                 
@@ -110,19 +110,19 @@ class BKTree {
             if (root == nullptr) return false;
             BKNode* current = root;
             
-            while (true) {
+            while (true){
                 int distance = calculateLevenshteinDistance(current->word, word);
-                
-                if (distance == 0) {
-                    if (current->isDeleted) {
+                // If we found the word, mark it as deleted
+                if (distance == 0){
+                    if (current->isDeleted){
                         return false; 
                     }
                     current->isDeleted = true; 
                     return true;
                 }
-                
-                if (current->children.find(distance) != current->children.end()) {
-                    current = current->children[distance]; 
+                // If no child exists at this distance, the word is not in the tree
+                if (current->children.find(distance) != current->children.end()){
+                    current = current->children[distance];
                 } else {
                     return false; 
                 }
@@ -130,7 +130,7 @@ class BKTree {
         }
 
         // Recursive function to find suggestions within the tolerance range
-        void searchHelper(BKNode* node, const string& query, int tolerance, vector<SearchResult>& results) {
+        void searchHelper(BKNode* node, const string& query, int tolerance, vector<SearchResult>& results){
             if (node == nullptr) return;
 
             int dist = calculateLevenshteinDistance(node->word, query);
@@ -142,11 +142,11 @@ class BKTree {
             // Triangle Inequality constraints
             int minBound = dist- tolerance;
             int maxBound = dist+tolerance;
-            
+            // Explore children within the bounds
             for (auto const& pair : node->children){
                 int edgeWeight = pair.first;
                 BKNode* childNode = pair.second;
-
+                // Only explore this child if it could potentially have valid suggestions
                 if (edgeWeight >= minBound && edgeWeight <= maxBound){
                     searchHelper(childNode, query, tolerance, results);
                 }
@@ -175,29 +175,30 @@ void loadDictionary(const string& filename, BKTree& tree){
     string line;
 
     if (!file.is_open()){
-        return; // Silent fail for backend API
+        return;
     }
     
-    while (getline(file, line)) {
+    while (getline(file, line)){
+        // traversing the line to separate the word and its frequency
         string wordStr = "";
         int i = 0;
-        while (i < line.length() && line[i] != ' ' && line[i] != '\t') {
+        while (i < line.length() && line[i] != ' ' && line[i] != '\t'){
             wordStr += line[i];
             i++;
         }
 
         toLowerCase(wordStr);
-
-        string countStr = "";
+        // extracting only the last frequency
+        string count = "";
         int j = line.length() - 1;
-        while (j >= 0 && line[j] != ' ' && line[j] != '\t') {
-            countStr = line[j] + countStr; 
+        while (j >= 0 && line[j] != ' ' && line[j] != '\t'){
+            count = line[j] + count; 
             j--;
         }
 
-        long long frequency = stringToNumber(countStr); 
+        long long frequency = stringToNumber(count); 
         
-        if (frequency > 0 && wordStr.length() > 0) {
+        if (frequency > 0 && wordStr.length() > 0){
             tree.insert(wordStr, frequency);
         }
     }
@@ -205,68 +206,86 @@ void loadDictionary(const string& filename, BKTree& tree){
     file.close();
 }
 
-// ==========================================
-// FEATURE 4: The Context/Bigram Parser
-// ==========================================
-void loadBigrams(const string& filename, unordered_map<string, unordered_map<string, long long>>& bigramMap) {
+void loadBigrams(const string& filename, unordered_map<string, unordered_map<string, long long>>& bigramMap){
     ifstream file(filename);
     string line;
 
     if (!file.is_open()) return;
     
-    while (getline(file, line)) {
-        string w1 = "", w2 = "", countStr = "";
-        int wordState = 0; // 0 = writing w1, 1 = writing w2, 2 = writing the number
-
-        for (int i = 0; i < line.length(); i++) {
-            char c = line[i];
+    while (getline(file, line)){
+        stringstream ss(line);
+        string w1, w2, count;
+        // It reads the first chunk into w1, the second into w2, and the third into count.
+        if (ss >> w1 >> w2 >> count){
+            toLowerCase(w1);
+            toLowerCase(w2);
+            long long frequency = stringToNumber(count);
             
-            if (c == ' ' || c == '\t') {
-                if (wordState == 0 && w1.length() > 0) wordState = 1;
-                else if (wordState == 1 && w2.length() > 0) wordState = 2;
-            } else {
-                if (wordState == 0) w1 += c;
-                else if (wordState == 1) w2 += c;
-                else countStr += c;
+            if (frequency > 0){
+                bigramMap[w1][w2] = frequency;
             }
-        }
-
-        toLowerCase(w1);
-        toLowerCase(w2);
-        long long frequency = stringToNumber(countStr);
-        
-        if (frequency > 0 && w1.length() > 0 && w2.length() > 0) {
-            bigramMap[w1][w2] = frequency;
         }
     }
     
     file.close();
 }
 
-// Custom sort: Primary sort by edit distance, secondary by context score
-bool rankSuggestions(const SearchResult& a, const SearchResult& b) {
+// void loadBigrams(const string& filename, unordered_map<string, unordered_map<string, long long>>& bigramMap){
+//     ifstream file(filename);
+//     string line;
+
+//     if (!file.is_open()) return;
+    
+//     while (getline(file, line)){
+//         string w1 = "", w2 = "", count = "";
+//         int wordState = 0; // 0 = writing w1, 1 = writing w2, 2 = writing the number
+
+//         for (int i = 0; i < line.length(); i++) {
+//             char c = line[i];
+            
+//             if (c == ' ' || c == '\t') {
+//                 if (wordState == 0 && w1.length() > 0) wordState = 1;
+//                 else if (wordState == 1 && w2.length() > 0) wordState = 2;
+//             } else {
+//                 if (wordState == 0) w1 += c;
+//                 else if (wordState == 1) w2 += c;
+//                 else count += c;
+//             }
+//         }
+
+//         toLowerCase(w1);
+//         toLowerCase(w2);
+//         long long frequency = stringToNumber(count);
+        
+//         if (frequency > 0 && w1.length() > 0 && w2.length() > 0) {
+//             bigramMap[w1][w2] = frequency;
+//         }
+//     }
+    
+//     file.close();
+// }
+
+// primary sort by edit distance, secondary by context score
+bool rankSuggestions(const SearchResult& a, const SearchResult& b){
     if (a.distance != b.distance) {
         return a.distance < b.distance; 
     }
     return a.contextScore > b.contextScore; 
 }
 
-// ==========================================
-// API FUNCTION FOR PYTHON GUI (Application 1)
-// ==========================================
-void runApplication1_Headless(string userLine, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
+void application1(string userLine, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
     string originalSentence[100];
     string correctedSentence[100];
     int wordCount = 0;
     bool typoDetected = false;
     string currentWord = "";
-
-    for (int i = 0; i <= userLine.length() && wordCount < 100; i++) {
-        if (i == userLine.length() || userLine[i] == ' ' || userLine[i] == '\t') {
-            if (currentWord.length() > 0) {
+    // traverse the user input character by character to separate words and handle them one by one
+    for (int i = 0; i <= userLine.length() && wordCount < 100; i++){
+        if (i == userLine.length() || userLine[i] == ' ' || userLine[i] == '\t'){
+            if (currentWord.length() > 0){
                 originalSentence[wordCount] = currentWord;
-                
-                if (isNumeric(currentWord)) {
+                // If the word is numeric, we skip spellchecking and directly add it to the corrected sentence
+                if (isNumeric(currentWord)){
                     correctedSentence[wordCount] = currentWord;
                     wordCount++;
                     currentWord = ""; 
@@ -282,48 +301,47 @@ void runApplication1_Headless(string userLine, BKTree& tree, unordered_map<strin
                     previousWord = correctedSentence[wordCount - 1];
                     toLowerCase(previousWord); 
                 }
-
-                for (int s = 0; s < suggestions.size(); s++) {
-                    long long standalonePop = suggestions[s].frequency;
+                // Calculate context score for each suggestion
+                for (int s = 0; s < suggestions.size(); s++){
+                    long long wordPopularity = suggestions[s].frequency;
                     long long pairPop = 0;
                     if (previousWord != "") {
                         pairPop = bigramMap[previousWord][suggestions[s].word];
                     }
-                    suggestions[s].contextScore = standalonePop + (pairPop * 50000000LL); 
+                    suggestions[s].contextScore = wordPopularity + (pairPop * 50000000LL); 
                 }
 
                 sort(suggestions.begin(), suggestions.end(), rankSuggestions);
-
-                if (suggestions.empty() || suggestions[0].distance == 0) {
+                // If the best suggestion is an exact match, keep the original word
+                if (suggestions.empty() || suggestions[0].distance == 0){
                     correctedSentence[wordCount] = currentWord; 
-                } else {
+                }else{
+                    // otherwise, we have a typo and we replace it with the best suggestion
                     typoDetected = true;
                     correctedSentence[wordCount] = suggestions[0].word; 
                 }
                 wordCount++;
                 currentWord = ""; 
             }
-        } else {
+        }else{
             currentWord += userLine[i];
         }
     }
 
-    if (typoDetected) {
+    if (typoDetected){
         cout << "Did you mean: \"";
-        for (int i = 0; i < wordCount; i++) {
+        for (int i = 0; i < wordCount; i++){
             cout << correctedSentence[i] << (i == wordCount - 1 ? "" : " ");
         }
         cout << "\"?";
-    } else {
+    }else{
         cout << "All words spelled correctly!";
     }
 }
 
-// ==========================================
-// API FUNCTION FOR PYTHON GUI (Application 2)
-// ==========================================
-void runApplication2_Headless(string userWord, BKTree& tree) {
-    if (isNumeric(userWord)) {
+//Add a new word to personal dictionary 
+void application2(string userWord, BKTree& tree){
+    if (isNumeric(userWord)){
         cout << "ERROR_NUMERIC";
         return;
     }
@@ -331,26 +349,23 @@ void runApplication2_Headless(string userWord, BKTree& tree) {
     toLowerCase(userWord);
     vector<SearchResult> exactMatch = tree.getSuggestions(userWord, 0);
     
-    if (!exactMatch.empty()) {
+    if (!exactMatch.empty()){
         cout << "EXISTS";
-    } else {
+    }else{
         tree.insert(userWord, 50000000); 
-        
+        // Append the new word to the personal dictionary file
         ofstream outFile("personal_dict.txt", ios::app);
-        if (outFile.is_open()) {
+        if (outFile.is_open()){
             outFile << userWord << " " << 50000000 << "\n";
             outFile.close();
             cout << "ADDED";
-        } else {
+        }else{
             cout << "ERROR_FILE";
         }
     }
 }
 
-// ==========================================
-// API FUNCTION FOR PYTHON GUI (Application 3)
-// ==========================================
-void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
+void application3(string query, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance){
     string currentWord = "";
     string previousWord = "";
     
@@ -378,14 +393,14 @@ void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, 
     vector<SearchResult> suggestions = tree.getSuggestions(currentWord, tolerance);
     
     for (int s = 0; s < suggestions.size(); s++) {
-        long long standalonePop = suggestions[s].frequency;
+        long long wordPopularity = suggestions[s].frequency;
         long long pairPop = 0;
         
         if (previousWord != "") {
             pairPop = bigramMap[previousWord][suggestions[s].word];
         }
         
-        suggestions[s].contextScore = standalonePop + (pairPop * 50000000LL); 
+        suggestions[s].contextScore = wordPopularity + (pairPop * 50000000LL); 
     }
 
     sort(suggestions.begin(), suggestions.end(), rankSuggestions);
@@ -403,7 +418,7 @@ void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, 
 // ==========================================
 // API FUNCTION FOR PYTHON GUI (Application 4)
 // ==========================================
-void runApplication4_Headless(string previousWord, unordered_map<string, unordered_map<string, long long>>& bigramMap) {
+void application4(string previousWord, unordered_map<string, unordered_map<string, long long>>& bigramMap) {
     toLowerCase(previousWord);
 
     if (bigramMap.find(previousWord) == bigramMap.end() || bigramMap[previousWord].empty()) {
@@ -457,13 +472,13 @@ int main(int argc, char* argv[]){
     }
 
     if (mode == "1") {
-        runApplication1_Headless(query, spellCheckerTree, bigramMap, tolerance);
+        application1(query, spellCheckerTree, bigramMap, tolerance);
     } else if (mode == "2") {
-        runApplication2_Headless(query, spellCheckerTree);
+        application2(query, spellCheckerTree);
     } else if (mode == "3") {
-        runApplication3_Headless(query, spellCheckerTree, bigramMap, tolerance);
+        application3(query, spellCheckerTree, bigramMap, tolerance);
     } else if (mode == "4") {
-        runApplication4_Headless(query, bigramMap);
+        application4(query, bigramMap);
     }
     
     return 0; 
