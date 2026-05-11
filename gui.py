@@ -14,7 +14,6 @@ typing_timer = None
 executable_path = "./main.exe"  # Make sure your compiled C++ file is named main.exe!
 suggested_sentence = ""
 dict_window = None 
-context_window = None 
 
 # ==========================================
 # FEATURE 2: Personal Dictionary Manager (Popup)
@@ -72,93 +71,9 @@ def open_dictionary_manager():
     add_btn = ctk.CTkButton(dict_window, text="Add to Engine", width=150, height=35, fg_color="#8AB4F8", text_color="#202124", hover_color="#AECBFA", font=("Roboto", 14, "bold"), command=submit_new_word)
     add_btn.pack(pady=10)
 
-# ==========================================
-# FEATURE 4: Context Analyzer Demo (Popup)
-# ==========================================
-def open_context_analyzer():
-    global context_window
-    
-    if context_window is not None and context_window.winfo_exists():
-        context_window.focus()
-        return
-
-    context_window = ctk.CTkToplevel(app)
-    context_window.title("App 4: Context Map Analyzer")
-    context_window.geometry("550x400")
-    context_window.attributes("-topmost", True) 
-    context_window.configure(fg_color="#202124")
-
-    title = ctk.CTkLabel(context_window, text="Conditional Probability Engine", font=("Roboto", 20, "bold"), text_color="#8AB4F8")
-    title.pack(pady=(20, 5))
-
-    subtitle = ctk.CTkLabel(context_window, text="See how Bigrams override standard Unigram popularity.", font=("Roboto", 13), text_color="#9AA0A6")
-    subtitle.pack(pady=(0, 20))
-
-    input_frame = ctk.CTkFrame(context_window, fg_color="transparent")
-    input_frame.pack(pady=5)
-    
-    prev_entry = ctk.CTkEntry(input_frame, placeholder_text="Previous Word", width=150, height=40, font=("Roboto", 15), fg_color="#303134", border_color="#5F6368")
-    prev_entry.pack(side="left", padx=10)
-    
-    typo_entry = ctk.CTkEntry(input_frame, placeholder_text="Typo Word", width=150, height=40, font=("Roboto", 15), fg_color="#303134", border_color="#5F6368")
-    typo_entry.pack(side="left", padx=10)
-
-    result_box = ctk.CTkTextbox(context_window, width=500, height=130, font=("Consolas", 14), fg_color="#303134", text_color="#E8EAED")
-    result_box.pack(pady=15)
-    result_box.insert("0.0", "Results will appear here...")
-    result_box.configure(state="disabled")
-
-    def run_analyzer():
-        prev = prev_entry.get().strip()
-        typo = typo_entry.get().strip()
-        
-        if not prev or not typo or " " in prev or " " in typo:
-            result_box.configure(state="normal")
-            result_box.delete("0.0", "end")
-            result_box.insert("0.0", "Please enter exactly ONE word in each box.")
-            result_box.configure(state="disabled")
-            return
-            
-        result_box.configure(state="normal")
-        result_box.delete("0.0", "end")
-        result_box.insert("0.0", "Calculating probabilities...")
-        result_box.configure(state="disabled")
-        context_window.update()
-
-        try:
-            query = f"{prev} {typo}"
-            process = subprocess.run([executable_path, "4", query], capture_output=True, text=True)
-            output = process.stdout.strip()
-            
-            result_box.configure(state="normal")
-            result_box.delete("0.0", "end")
-            
-            if output == "NO_TYPO":
-                result_box.insert("0.0", "Typo word is already spelled correctly.")
-            elif output == "ERROR":
-                result_box.insert("0.0", "Input error.")
-            else:
-                rows = output.split('|')
-                display_text = f"{'WORD':<12} | {'BASE POP':<10} | {'BIGRAM FIX':<10} | {'FINAL SCORE'}\n"
-                display_text += "-"*60 + "\n"
-                
-                for r in rows:
-                    if not r: continue
-                    parts = r.split(',')
-                    if len(parts) == 4:
-                        display_text += f"{parts[0]:<12} | {parts[1]:<10} | {parts[2]:<10} | {parts[3]}\n"
-                        
-                result_box.insert("0.0", display_text)
-                
-            result_box.configure(state="disabled")
-        except Exception as e:
-             print("Backend Error (App 4):", e)
-
-    analyze_btn = ctk.CTkButton(context_window, text="Analyze Context Matrix", width=200, height=35, fg_color="#8AB4F8", text_color="#202124", hover_color="#AECBFA", font=("Roboto", 14, "bold"), command=run_analyzer)
-    analyze_btn.pack(pady=5)
 
 # ==========================================
-# FEATURE 3: Live Typing Suggestions (Rich Text & Diffing)
+# FEATURE 3 & 4: Live Typing & Predictive Text
 # ==========================================
 def on_key_release(event):
     global typing_timer
@@ -171,53 +86,97 @@ def on_key_release(event):
     if typing_timer is not None:
         app.after_cancel(typing_timer)
     
-    typing_timer = app.after(600, fetch_live_suggestions)
+    typing_timer = app.after(300, fetch_live_suggestions)
 
 def fetch_live_suggestions():
-    query = search_entry.get().strip()
-    if not query:
+    query = search_entry.get() 
+    if not query.strip():
         hide_dropdown()
         return
 
-    words = query.split()
-    current_word = words[-1]
-    previous_words = " ".join(words[:-1])
-    
-    original_words_list = words 
-    corrected_previous_words = previous_words
+    # ==========================================
+    # PATH A: NEXT WORD PREDICTION (Application 4)
+    # Triggered if the user just hit the spacebar
+    # ==========================================
+    if query.endswith(" "):
+        words = query.strip().split()
+        original_words_list = words
+        previous_words_string = " ".join(words) 
+        
+        corrected_previous_words = previous_words_string
 
-    # 1. Autocorrect the history in the background
-    if previous_words:
+        # 1. Autocorrect the ENTIRE sentence first!
+        if previous_words_string:
+            try:
+                p1 = subprocess.run([executable_path, "1", previous_words_string], capture_output=True, text=True)
+                out1 = p1.stdout.strip()
+                if "Did you mean:" in out1:
+                    start_idx = out1.find('"') + 1
+                    end_idx = out1.rfind('"')
+                    corrected_previous_words = out1[start_idx:end_idx]
+            except Exception as e:
+                pass
+                
+        # 2. Extract the AUTOCORRECTED last word to feed into the Context Map
+        corrected_words_list = corrected_previous_words.split()
+        corrected_last_word = corrected_words_list[-1] if corrected_words_list else ""
+
         try:
-            p1 = subprocess.run([executable_path, "1", previous_words], capture_output=True, text=True)
-            out1 = p1.stdout.strip()
-            if "Did you mean:" in out1:
-                start_idx = out1.find('"') + 1
-                end_idx = out1.rfind('"')
-                corrected_previous_words = out1[start_idx:end_idx]
-        except Exception as e:
-            print("Backend Error (App 1):", e)
-
-    # 2. Get smart context-aware suggestions for the current word
-    try:
-        # MAGIC TWEAK: Glue the autocorrected history and the current typo together
-        # so C++ Mode 3 knows exactly what context it is working with!
-        query_for_app3 = f"{corrected_previous_words} {current_word}".strip()
-        
-        # Send the FULL string to Mode 3
-        p3 = subprocess.run([executable_path, "3", query_for_app3], capture_output=True, text=True)
-        out3 = p3.stdout.strip()
-        
-        if out3 == "CORRECT" or not out3:
-            if previous_words != corrected_previous_words:
-                show_dropdown([current_word], corrected_previous_words, original_words_list)
+            p4 = subprocess.run([executable_path, "4", corrected_last_word], capture_output=True, text=True)
+            out4 = p4.stdout.strip()
+            
+            if out4 == "NO_PREDICTIONS" or not out4:
+                # FALLBACK: No next words found, but we STILL need to show the autocorrected history!
+                if previous_words_string != corrected_previous_words:
+                    # Pass an empty string as the prediction so it just shows the fixed sentence
+                    show_dropdown([""], corrected_previous_words, original_words_list)
+                else:
+                    hide_dropdown()
             else:
-                hide_dropdown()
-        else:
-            suggestions = out3.split(',')
-            show_dropdown(suggestions, corrected_previous_words, original_words_list)
-    except Exception as e:
-        print("Backend Error (App 3):", e)
+                predictions = out4.split(',')
+                show_dropdown(predictions, corrected_previous_words, original_words_list)
+        except Exception as e:
+            print("Backend Error (App 4):", e)
+
+    # ==========================================
+    # PATH B: LIVE AUTOCORRECT (Application 3)
+    # Triggered if the user is currently typing a word
+    # ==========================================
+    else:
+        query = query.strip()
+        words = query.split()
+        current_word = words[-1]
+        previous_words = " ".join(words[:-1])
+        
+        original_words_list = words 
+        corrected_previous_words = previous_words
+
+        if previous_words:
+            try:
+                p1 = subprocess.run([executable_path, "1", previous_words], capture_output=True, text=True)
+                out1 = p1.stdout.strip()
+                if "Did you mean:" in out1:
+                    start_idx = out1.find('"') + 1
+                    end_idx = out1.rfind('"')
+                    corrected_previous_words = out1[start_idx:end_idx]
+            except Exception as e:
+                pass
+
+        try:
+            query_for_app3 = f"{corrected_previous_words} {current_word}".strip()
+            p3 = subprocess.run([executable_path, "3", query_for_app3], capture_output=True, text=True)
+            out3 = p3.stdout.strip()
+            
+            if out3 == "CORRECT" or not out3:
+                if previous_words != corrected_previous_words:
+                    show_dropdown([current_word], corrected_previous_words, original_words_list)
+                else:
+                    hide_dropdown()
+            else:
+                suggestions = out3.split(',')
+                show_dropdown(suggestions, corrected_previous_words, original_words_list)
+        except Exception as e:
+            print("Backend Error (App 3):", e)
 
 def show_dropdown(suggestions, corrected_previous, original_words_list):
     for widget in dropdown_frame.winfo_children():
@@ -226,8 +185,12 @@ def show_dropdown(suggestions, corrected_previous, original_words_list):
     corrected_prev_list = corrected_previous.split() if corrected_previous else []
 
     for word in suggestions:
-        full_suggestion_text = f"{corrected_previous} {word}".strip()
-        suggested_words_list = corrected_prev_list + [word]
+        if word == "":
+            full_suggestion_text = corrected_previous
+            suggested_words_list = corrected_prev_list
+        else:
+            full_suggestion_text = f"{corrected_previous} {word}".strip()
+            suggested_words_list = corrected_prev_list + [word]
 
         row_frame = ctk.CTkFrame(dropdown_frame, fg_color="transparent", corner_radius=0)
         row_frame.pack(fill="x", padx=0, pady=2)
@@ -275,6 +238,7 @@ def apply_suggestion(full_text):
     hide_dropdown()
     search_entry.focus()
 
+
 # ==========================================
 # FEATURE 1: Sentence Search & "Did You Mean"
 # ==========================================
@@ -299,9 +263,9 @@ def execute_search(event=None):
             did_you_mean_label.configure(text=f"Did you mean: {suggested_sentence}")
             did_you_mean_label.pack(pady=(5, 10))
             
-            result_label.configure(text=f"Showing results for: {query}\n(Search executed with warnings)")
+            result_label.configure(text=f"Showing results for: {query}\n")
         else:
-            result_label.configure(text=f"Showing results for: {query}\n(All words spelled correctly!)")
+            result_label.configure(text=f"Showing results for: {query}\n")
             
     except Exception as e:
         result_label.configure(text=f"Error connecting to Engine: {e}")
@@ -311,6 +275,7 @@ def on_did_you_mean_click(event):
     search_entry.delete(0, "end")
     search_entry.insert(0, suggested_sentence)
     execute_search()
+
 
 # ==========================================
 # UI LAYOUT & DESIGN
@@ -337,9 +302,6 @@ search_btn.pack(side="left", padx=10)
 
 dict_btn = ctk.CTkButton(button_frame, text="⚙️ Manage Dictionary", width=160, height=35, fg_color="transparent", hover_color="#3C4043", text_color="#9AA0A6", command=open_dictionary_manager)
 dict_btn.pack(side="left", padx=10)
-
-context_btn = ctk.CTkButton(button_frame, text="🧠 Context Math", width=140, height=35, fg_color="transparent", hover_color="#3C4043", text_color="#8AB4F8", command=open_context_analyzer)
-context_btn.pack(side="left", padx=10)
 
 result_label = ctk.CTkLabel(app, text="", font=("Roboto", 18), text_color="#9AA0A6")
 result_label.pack(pady=40)

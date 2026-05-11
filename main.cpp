@@ -643,47 +643,32 @@ void runApplication3_Headless(string query, BKTree& tree, unordered_map<string, 
 }
 
 // ==========================================
-// API FUNCTION FOR PYTHON GUI (Application 4 - Context Map Math)
+// API FUNCTION FOR PYTHON GUI (Application 4 - Next Word Prediction)
 // ==========================================
-void runApplication4_Headless(string query, BKTree& tree, unordered_map<string, unordered_map<string, long long>>& bigramMap, int tolerance) {
-    // We expect exactly two words from Python: "previous_word typo_word"
-    int spaceIndex = query.find(' ');
-    if (spaceIndex == string::npos) {
-        cout << "ERROR";
+void runApplication4_Headless(string previousWord, unordered_map<string, unordered_map<string, long long>>& bigramMap) {
+    toLowerCase(previousWord);
+
+    // If the word isn't in our Bigram map, we can't predict what comes next
+    if (bigramMap.find(previousWord) == bigramMap.end() || bigramMap[previousWord].empty()) {
+        cout << "NO_PREDICTIONS";
         return;
     }
 
-    string prevWord = query.substr(0, spaceIndex);
-    string typoWord = query.substr(spaceIndex + 1);
-
-    toLowerCase(prevWord);
-    toLowerCase(typoWord);
-
-    vector<SearchResult> suggestions = tree.getSuggestions(typoWord, tolerance);
-    if (suggestions.empty() || suggestions[0].distance == 0) {
-        cout << "NO_TYPO";
-        return;
+    // Move the bigrams into a vector so we can sort them by highest probability
+    vector<pair<string, long long>> nextWords;
+    for (auto const& pair : bigramMap[previousWord]) {
+        nextWords.push_back(pair);
     }
 
-    // Apply the Application 4 Context Math!
-    for (int s = 0; s < suggestions.size(); s++) {
-        long long standalonePop = suggestions[s].frequency;
-        long long pairPop = bigramMap[prevWord][suggestions[s].word];
-        suggestions[s].contextScore = standalonePop + (pairPop * 50000000LL); 
-    }
+    // Sort by frequency (Descending)
+    sort(nextWords.begin(), nextWords.end(), [](const pair<string, long long>& a, const pair<string, long long>& b) {
+        return a.second > b.second;
+    });
 
-    // Sort using your custom rankSuggestions logic
-    sort(suggestions.begin(), suggestions.end(), rankSuggestions);
-
-    // Output top 3 results formatted for Python: word,base,bigram,final|word,base,bigram,final
-    int displayCount = min(3, (int)suggestions.size());
+    // Output a comma-separated list of the top 5 next word predictions
+    int displayCount = min(5, (int)nextWords.size());
     for (int i = 0; i < displayCount; i++) {
-        long long pairPop = bigramMap[prevWord][suggestions[i].word];
-        cout << suggestions[i].word << "," 
-             << suggestions[i].frequency << "," 
-             << pairPop << "," 
-             << suggestions[i].contextScore;
-        if (i < displayCount - 1) cout << "|";
+        cout << nextWords[i].first << (i == displayCount - 1 ? "" : ",");
     }
 }
 
@@ -725,7 +710,7 @@ int main(int argc, char* argv[]){
         } else if (mode == "3") {
             runApplication3_Headless(query, spellCheckerTree, bigramMap, tolerance);
         } else if (mode == "4") {
-            runApplication4_Headless(query, spellCheckerTree, bigramMap, tolerance);
+            runApplication4_Headless(query, bigramMap);
         }
         return 0; 
     }
