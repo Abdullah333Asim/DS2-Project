@@ -7,7 +7,7 @@ ctk.set_default_color_theme("blue")
 
 app = ctk.CTk()
 app.geometry("800x600")
-app.title("Google Clone - NLP Search")
+app.title("BARM")
 
 # --- Global Variables ---
 typing_timer = None
@@ -280,7 +280,7 @@ def on_did_you_mean_click(event):
 # ==========================================
 # UI LAYOUT & DESIGN
 # ==========================================
-title_label = ctk.CTkLabel(app, text="Google", font=("Roboto", 50, "bold"))
+title_label = ctk.CTkLabel(app, text="BARM", font=("Roboto", 50, "bold"))
 title_label.pack(pady=(80, 20))
 
 search_entry = ctk.CTkEntry(app, placeholder_text="Search the web...", width=500, height=45, font=("Roboto", 16), corner_radius=20)
@@ -297,7 +297,7 @@ did_you_mean_label.bind("<Button-1>", on_did_you_mean_click)
 button_frame = ctk.CTkFrame(app, fg_color="transparent")
 button_frame.pack(pady=20)
 
-search_btn = ctk.CTkButton(button_frame, text="Google Search", width=120, height=35, fg_color="#303134", hover_color="#3C4043", border_width=1, border_color="#5F6368", text_color="#E8EAED", command=execute_search)
+search_btn = ctk.CTkButton(button_frame, text="BARM Search", width=120, height=35, fg_color="#303134", hover_color="#3C4043", border_width=1, border_color="#5F6368", text_color="#E8EAED", command=execute_search)
 search_btn.pack(side="left", padx=10)
 
 dict_btn = ctk.CTkButton(button_frame, text="⚙️ Manage Dictionary", width=160, height=35, fg_color="transparent", hover_color="#3C4043", text_color="#9AA0A6", command=open_dictionary_manager)
