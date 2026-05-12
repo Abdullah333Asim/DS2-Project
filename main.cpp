@@ -371,14 +371,19 @@ void application3(string query, BKTree& tree, unordered_map<string, unordered_ma
     
     vector<string> words;
     string temp = "";
-    for (char c : query) {
-        if (c == ' ' || c == '\t') {
-            if (!temp.empty()) { words.push_back(temp); temp = ""; }
-        } else {
+    for (char c : query){
+        if (c == ' ' || c == '\t'){
+            if (!temp.empty()){
+                words.push_back(temp);
+                temp = "";
+            }
+        }else{
             temp += c;
         }
     }
-    if (!temp.empty()) words.push_back(temp);
+    if (!temp.empty()){
+        words.push_back(temp);
+    }
 
     if (words.empty()) return;
     
@@ -392,11 +397,11 @@ void application3(string query, BKTree& tree, unordered_map<string, unordered_ma
 
     vector<SearchResult> suggestions = tree.getSuggestions(currentWord, tolerance);
     
-    for (int s = 0; s < suggestions.size(); s++) {
+    for (int s = 0; s < suggestions.size(); s++){
         long long wordPopularity = suggestions[s].frequency;
         long long pairPop = 0;
         
-        if (previousWord != "") {
+        if (previousWord != ""){
             pairPop = bigramMap[previousWord][suggestions[s].word];
         }
         
@@ -405,46 +410,41 @@ void application3(string query, BKTree& tree, unordered_map<string, unordered_ma
 
     sort(suggestions.begin(), suggestions.end(), rankSuggestions);
 
-    if (suggestions.empty() || suggestions[0].distance == 0) {
+    if (suggestions.empty() || suggestions[0].distance == 0){
         cout << "CORRECT";
-    } else {
+    }else{
         int displayCount = min(5, (int)suggestions.size());
-        for (int i = 0; i < displayCount; i++) {
+        for (int i = 0; i < displayCount; i++){
             cout << suggestions[i].word << (i == displayCount - 1 ? "" : ",");
         }
     }
 }
 
-// ==========================================
-// API FUNCTION FOR PYTHON GUI (Application 4)
-// ==========================================
-void application4(string previousWord, unordered_map<string, unordered_map<string, long long>>& bigramMap) {
+void application4(string previousWord, unordered_map<string, unordered_map<string, long long>>& bigramMap){
     toLowerCase(previousWord);
-
+    // If the previous word is not in the bigram map or has no next words, we can't make any predictions
     if (bigramMap.find(previousWord) == bigramMap.end() || bigramMap[previousWord].empty()) {
         cout << "NO_PREDICTIONS";
         return;
     }
-
+    // Create a vector of pairs to sort the next words by their bigram frequency
     vector<pair<string, long long>> nextWords;
-    for (auto const& pair : bigramMap[previousWord]) {
+    for (auto const& pair : bigramMap[previousWord]){
         nextWords.push_back(pair);
     }
-
-    sort(nextWords.begin(), nextWords.end(), [](const pair<string, long long>& a, const pair<string, long long>& b) {
+    // Sort the next words by frequency in descending order
+    sort(nextWords.begin(), nextWords.end(), [](const pair<string, long long>& a, const pair<string, long long>& b){
         return a.second > b.second;
     });
-
+    // Display the top 5 predictions
     int displayCount = min(5, (int)nextWords.size());
-    for (int i = 0; i < displayCount; i++) {
+    for (int i = 0; i < displayCount; i++){
         cout << nextWords[i].first << (i == displayCount - 1 ? "" : ",");
     }
 }
 
 int main(int argc, char* argv[]){
-    // If double-clicked manually by a user, provide a warning and close
     if (argc <= 1) {
-        cout << "This is the backend API engine. Please run the Python GUI (gui.py) instead!" << endl;
         return 0;
     }
 
@@ -462,11 +462,10 @@ int main(int argc, char* argv[]){
 
     int tolerance = 2;
     
-    // API Router
     string mode = argv[1]; 
     string query = "";
     
-    for (int i = 2; i < argc; i++) {
+    for (int i = 2; i < argc; i++){
         query += argv[i];
         if (i < argc - 1) query += " ";
     }

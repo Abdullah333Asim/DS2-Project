@@ -1,7 +1,6 @@
 import customtkinter as ctk
 import subprocess
 
-# Set up the modern dark theme (Google Dark Mode style)
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
@@ -9,15 +8,12 @@ app = ctk.CTk()
 app.geometry("800x600")
 app.title("BARM")
 
-# --- Global Variables ---
 typing_timer = None
-executable_path = "./main.exe"  # Make sure your compiled C++ file is named main.exe!
+executable_path = "./main.exe"
 suggested_sentence = ""
 dict_window = None 
 
-# ==========================================
-# FEATURE 2: Personal Dictionary Manager (Popup)
-# ==========================================
+#Personal Dictionary Manager 
 def open_dictionary_manager():
     global dict_window
     
@@ -72,9 +68,7 @@ def open_dictionary_manager():
     add_btn.pack(pady=10)
 
 
-# ==========================================
-# FEATURE 3 & 4: Live Typing & Predictive Text
-# ==========================================
+# Live Typing & Predictive Text
 def on_key_release(event):
     global typing_timer
     
@@ -94,10 +88,8 @@ def fetch_live_suggestions():
         hide_dropdown()
         return
 
-    # ==========================================
-    # PATH A: NEXT WORD PREDICTION (Application 4)
+    # NEXT WORD PREDICTION (Application 4)
     # Triggered if the user just hit the spacebar
-    # ==========================================
     if query.endswith(" "):
         words = query.strip().split()
         original_words_list = words
@@ -138,10 +130,8 @@ def fetch_live_suggestions():
         except Exception as e:
             print("Backend Error (App 4):", e)
 
-    # ==========================================
-    # PATH B: LIVE AUTOCORRECT (Application 3)
+    # LIVE AUTOCORRECT (Application 3)
     # Triggered if the user is currently typing a word
-    # ==========================================
     else:
         query = query.strip()
         words = query.split()
@@ -239,9 +229,7 @@ def apply_suggestion(full_text):
     search_entry.focus()
 
 
-# ==========================================
-# FEATURE 1: Sentence Search & "Did You Mean"
-# ==========================================
+# Sentence Search & "Did You Mean"
 def execute_search(event=None):
     global suggested_sentence
     hide_dropdown()
@@ -277,9 +265,6 @@ def on_did_you_mean_click(event):
     execute_search()
 
 
-# ==========================================
-# UI LAYOUT & DESIGN
-# ==========================================
 title_label = ctk.CTkLabel(app, text="BARM", font=("Roboto", 50, "bold"))
 title_label.pack(pady=(80, 20))
 
